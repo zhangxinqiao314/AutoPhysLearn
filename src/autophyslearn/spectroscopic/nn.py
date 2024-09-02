@@ -34,6 +34,7 @@ class Multiscale1DFitter(nn.Module):
         """
         super().__init__()
 
+        # TODO: Could add a decoder encoder block to the model
         self.input_channels = input_channels
         self.scaler = scaler
         self.function = function
