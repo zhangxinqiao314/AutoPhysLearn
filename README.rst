@@ -34,16 +34,9 @@ AutoPhysLearn
 =============
 
 
-    Add a short description here!
+    A package for building and training physics constrained neural networks. 
 
 
-A longer description of your project goes here...
+A package for building and training physics constrained neural networks. This package is designed to simplify the design, development, and training of physics-constrained neural networks for a variety of scientific machine learning tasks.
 
 
-.. _pyscaffold-notes:
-
-Note
-====
-
-This project has been set up using PyScaffold 4.5. For details and usage
-information on PyScaffold see https://pyscaffold.org/.

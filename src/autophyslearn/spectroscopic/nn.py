@@ -27,7 +27,18 @@ class Multiscale1DFitter(nn.Module):
         loops_scaler (object, optional): Scaler used for final output scaling.
     """
 
-    def __init__(self, function, x_data, input_channels, num_params, scaler=None, post_processing=None, device="cuda", loops_scaler=None, **kwargs):
+    def __init__(
+        self,
+        function,
+        x_data,
+        input_channels,
+        num_params,
+        scaler=None,
+        post_processing=None,
+        device="cuda",
+        loops_scaler=None,
+        **kwargs,
+    ):
         """
         Initializes the Multiscale1DFitter model.
 
@@ -62,7 +73,9 @@ class Multiscale1DFitter(nn.Module):
             nn.SELU(),
             nn.Conv1d(in_channels=6, out_channels=4, kernel_size=5),
             nn.SELU(),
-            nn.AdaptiveAvgPool1d(64)  # Adaptive average pooling to reduce output dimensionality
+            nn.AdaptiveAvgPool1d(
+                64
+            ),  # Adaptive average pooling to reduce output dimensionality
         )
 
         # Fully connected block
@@ -127,7 +140,7 @@ class Multiscale1DFitter(nn.Module):
         # Swap axes to have the correct shape for convolutional layers
         x = torch.swapaxes(x, 1, 2)
         x = self.hidden_x1(x)
-        
+
         # Reshape the output for the fully connected block
         xfc = torch.reshape(x, (n, 256))  # (batch_size, features)
         xfc = self.hidden_xfc(xfc)
@@ -135,13 +148,13 @@ class Multiscale1DFitter(nn.Module):
         # Reshape for the second block of convolutional layers
         x = torch.reshape(x, (n, 2, 128))
         x = self.hidden_x2(x)
-        
+
         # Flatten the output of the second convolutional block
         cnn_flat = self.flatten_layer(x)
 
         # Combine the flattened convolutional output and fully connected output
         encoded = torch.cat((cnn_flat, xfc), dim=1)
-        
+
         # Get the final embedding (output parameters)
         embedding = self.hidden_embedding(encoded)
 
@@ -150,7 +163,7 @@ class Multiscale1DFitter(nn.Module):
         # If a scaler is provided, unscale the parameters
         if self.scaler is not None:
             unscaled_param = (
-                embedding * torch.tensor(self.scaler.var_ ** 0.5).cuda() 
+                embedding * torch.tensor(self.scaler.var_**0.5).cuda()
                 + torch.tensor(self.scaler.mean_).cuda()
             )
 
@@ -167,8 +180,9 @@ class Multiscale1DFitter(nn.Module):
 
         # If a loops scaler is provided, scale the final output
         if self.loops_scaler is not None:
-            out_scaled = (out - torch.tensor(self.loops_scaler.mean).cuda()) / \
-                          torch.tensor(self.loops_scaler.std).cuda()
+            out_scaled = (
+                out - torch.tensor(self.loops_scaler.mean).cuda()
+            ) / torch.tensor(self.loops_scaler.std).cuda()
         else:
             out_scaled = out
 
@@ -176,9 +190,11 @@ class Multiscale1DFitter(nn.Module):
             return out_scaled, unscaled_param
         else:
             # Return scaled embeddings and unscaled parameters when not in training mode
-            embeddings = (unscaled_param.cuda() - torch.tensor(self.scaler.mean_).cuda()) / \
-                         torch.tensor(self.scaler.var_ ** 0.5).cuda()
+            embeddings = (
+                unscaled_param.cuda() - torch.tensor(self.scaler.mean_).cuda()
+            ) / torch.tensor(self.scaler.var_**0.5).cuda()
             return out_scaled, embeddings, unscaled_param
+
 
 class Model(nn.Module):
     """
@@ -194,14 +210,16 @@ class Model(nn.Module):
         device (str): Device to run the computations on ('cuda' or 'cpu').
     """
 
-    def __init__(self,
-                 model,
-                 dataset,
-                 model_basename='',
-                 training=True,
-                 path='Trained Models/SHO Fitter/',
-                 device=None,
-                 **kwargs):
+    def __init__(
+        self,
+        model,
+        dataset,
+        model_basename="",
+        training=True,
+        path="Trained Models/SHO Fitter/",
+        device=None,
+        **kwargs,
+    ):
         """
         Initializes the Model class.
 
@@ -233,24 +251,26 @@ class Model(nn.Module):
         self.model_name = model_basename
         self.path = make_folder(path)
 
-    def fit(self,
-            data_train,
-            batch_size=200,
-            epochs=5,
-            loss_func=torch.nn.MSELoss(),
-            optimizer='Adam',
-            seed=42,
-            datatype=torch.float32,
-            save_all=False,
-            write_CSV=None,
-            closure=None,
-            basepath=None,
-            early_stopping_loss=None,
-            early_stopping_count=None,
-            early_stopping_time=None,
-            save_training_loss=True,
-            i=None,
-            **kwargs):
+    def fit(
+        self,
+        data_train,
+        batch_size=200,
+        epochs=5,
+        loss_func=torch.nn.MSELoss(),
+        optimizer="Adam",
+        seed=42,
+        datatype=torch.float32,
+        save_all=False,
+        write_CSV=None,
+        closure=None,
+        basepath=None,
+        early_stopping_loss=None,
+        early_stopping_count=None,
+        early_stopping_time=None,
+        save_training_loss=True,
+        i=None,
+        **kwargs,
+    ):
         """
         Trains the model on the provided training data.
 
@@ -292,13 +312,14 @@ class Model(nn.Module):
         torch.cuda.empty_cache()
 
         # Select the optimizer based on the provided input
-        if optimizer == 'Adam':
+        if optimizer == "Adam":
             optimizer_ = torch.optim.Adam(self.model.parameters())
         elif optimizer == "AdaHessian":
-            optimizer_ = AdaHessian(self.model.parameters(), lr=.5)
-        elif isinstance(optimizer, dict) and optimizer['name'] == "TRCG":
-            optimizer_ = optimizer['optimizer'](
-                self.model, optimizer['radius'], optimizer['device'])
+            optimizer_ = AdaHessian(self.model.parameters(), lr=0.5)
+        elif isinstance(optimizer, dict) and optimizer["name"] == "TRCG":
+            optimizer_ = optimizer["optimizer"](
+                self.model, optimizer["radius"], optimizer["device"]
+            )
         else:
             try:
                 optimizer_ = optimizer(self.model.parameters())
@@ -306,8 +327,7 @@ class Model(nn.Module):
                 raise ValueError("Optimizer not recognized")
 
         # Instantiate the dataloader
-        train_dataloader = DataLoader(
-            data_train, batch_size=batch_size, shuffle=True)
+        train_dataloader = DataLoader(data_train, batch_size=batch_size, shuffle=True)
 
         # If using Trust Region CG, store the TR optimizer and instantiate the Adam optimizer
         if isinstance(optimizer_, TRCG):
@@ -337,6 +357,7 @@ class Model(nn.Module):
                 train_batch = train_batch.to(datatype).to(self.device)
 
                 if "TRCG_OP" in locals() and epoch > optimizer.get("ADAM_epochs", -1):
+
                     def closure(part, total, device):
                         pred, embedding = self.model(train_batch)
                         pred = pred.to(torch.float32)
@@ -364,8 +385,8 @@ class Model(nn.Module):
                     optimizer_.step()
                     optimizer_name = type(optimizer_).__name__
 
-                epoch_time += (time.time() - start_time)
-                total_time += (time.time() - start_time)
+                epoch_time += time.time() - start_time
+                total_time += time.time() - start_time
 
                 # Store the loss for logging
                 try:
@@ -378,27 +399,31 @@ class Model(nn.Module):
                     if loss < early_stopping_loss:
                         low_loss_count += train_batch.shape[0]
                         if low_loss_count >= early_stopping_count:
-                            torch.save(self.model.state_dict(),
-                                       f"{path}/Early_Stoppage_at_{total_time}_{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}_train_loss_{train_loss/total_num}.pth")
+                            torch.save(
+                                self.model.state_dict(),
+                                f"{path}/Early_Stoppage_at_{total_time}_{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}_train_loss_{train_loss/total_num}.pth",
+                            )
 
-                            write_csv(write_CSV,
-                                      path,
-                                      self.model_name,
-                                      i,
-                                      self.model.dataset.noise,
-                                      optimizer_name,
-                                      epoch,
-                                      total_time,
-                                      train_loss/total_num,
-                                      batch_size,
-                                      loss_func,
-                                      seed,
-                                      True,
-                                      model_updates)
+                            write_csv(
+                                write_CSV,
+                                path,
+                                self.model_name,
+                                i,
+                                self.model.dataset.noise,
+                                optimizer_name,
+                                epoch,
+                                total_time,
+                                train_loss / total_num,
+                                batch_size,
+                                loss_func,
+                                seed,
+                                True,
+                                model_updates,
+                            )
 
                             already_stopped = True
                     else:
-                        low_loss_count -= (train_batch.shape[0] * 5)
+                        low_loss_count -= train_batch.shape[0] * 5
 
             # Verbose logging
             if kwargs.get("verbose", False):
@@ -411,58 +436,70 @@ class Model(nn.Module):
             print(f"--- {epoch_time} seconds ---")
 
             # Print the current learning rate (optional)
-            current_lr = optimizer_.param_groups[0]['lr']
+            current_lr = optimizer_.param_groups[0]["lr"]
             print(f"Epoch {epoch+1}, Learning Rate: {current_lr}")
 
             # Save the model at each epoch if save_all is True
             if save_all:
-                torch.save(self.model.state_dict(),
-                           f"{path}/{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}_train_loss_{train_loss}.pth")
+                torch.save(
+                    self.model.state_dict(),
+                    f"{path}/{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}_train_loss_{train_loss}.pth",
+                )
 
             # Early stopping based on time
             if early_stopping_time is not None:
                 if total_time > early_stopping_time:
-                    torch.save(self.model.state_dict(),
-                               f"{path}/Early_Stoppage_at_{total_time}_{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}_train_loss_{train_loss}.pth")
+                    torch.save(
+                        self.model.state_dict(),
+                        f"{path}/Early_Stoppage_at_{total_time}_{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}_train_loss_{train_loss}.pth",
+                    )
 
-                    write_csv(write_CSV,
-                              path,
-                              self.model_name,
-                              i,
-                              self.model.dataset.noise,
-                              optimizer_name,
-                              epoch,
-                              total_time,
-                              train_loss,  # already divided by total_num
-                              batch_size,
-                              loss_func,
-                              seed,
-                              True,
-                              model_updates)
+                    write_csv(
+                        write_CSV,
+                        path,
+                        self.model_name,
+                        i,
+                        self.model.dataset.noise,
+                        optimizer_name,
+                        epoch,
+                        total_time,
+                        train_loss,  # already divided by total_num
+                        batch_size,
+                        loss_func,
+                        seed,
+                        True,
+                        model_updates,
+                    )
                     break
 
         # Save the final model
-        torch.save(self.model.state_dict(),
-                   f"{path}/{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}_train_loss_{train_loss}.pth")
-        write_csv(write_CSV,
-                  path,
-                  self.model_name,
-                  i,
-                  self.model.dataset.noise,
-                  optimizer_name,
-                  epoch,
-                  total_time,
-                  train_loss,  # already divided by total_num
-                  batch_size,
-                  loss_func,
-                  seed,
-                  False,
-                  model_updates)
+        torch.save(
+            self.model.state_dict(),
+            f"{path}/{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}_train_loss_{train_loss}.pth",
+        )
+        write_csv(
+            write_CSV,
+            path,
+            self.model_name,
+            i,
+            self.model.dataset.noise,
+            optimizer_name,
+            epoch,
+            total_time,
+            train_loss,  # already divided by total_num
+            batch_size,
+            loss_func,
+            seed,
+            False,
+            model_updates,
+        )
 
         # Save training loss if required
         if save_training_loss:
             save_list_to_txt(
-                loss_, f"{path}/Training_loss_{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}_train_loss_{train_loss}.txt")
+                loss_,
+                f"{path}/Training_loss_{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}_train_loss_{train_loss}.txt",
+            )
 
         # Set model to evaluation mode after training
         self.model.eval()
@@ -477,7 +514,7 @@ class Model(nn.Module):
         self.model.load_state_dict(torch.load(model_path))
         self.model.to(self.device)
 
-    def inference_timer(self, data, batch_size=.5e4):
+    def inference_timer(self, data, batch_size=0.5e4):
         """
         Measures the inference time for the model on the given data.
 
@@ -494,10 +531,9 @@ class Model(nn.Module):
         # Computes and prints the inference time
         computeTime(self.model, dataloader, batch_size, device=self.device)
 
-    def predict(self, data, batch_size=10000,
-                single=False,
-                translate_params=True,
-                is_SHO=True):
+    def predict(
+        self, data, batch_size=10000, single=False, translate_params=True, is_SHO=True
+    ):
         """
         Generates predictions for the given data using the trained model.
 
@@ -532,13 +568,13 @@ class Model(nn.Module):
                 end = num_elements
 
             pred_batch, params_scaled_, params_ = self.model(
-                train_batch.to(self.device))
+                train_batch.to(self.device)
+            )
 
             if is_SHO:
                 predictions[start:end] = pred_batch.cpu().detach()
             else:
-                predictions[start:end] = torch.unsqueeze(
-                    pred_batch.cpu().detach(), 2)
+                predictions[start:end] = torch.unsqueeze(pred_batch.cpu().detach(), 2)
             params_scaled[start:end] = params_scaled_.cpu().detach()
             params[start:end] = params_.cpu().detach()
 
@@ -551,9 +587,16 @@ class Model(nn.Module):
 
         # Apply phase shift correction if needed
         if self.model.dataset.NN_phase_shift is not None:
-            params_scaled[:, 3] = torch.Tensor(self.model.dataset.shift_phase(
-                params_scaled[:, 3].detach().numpy(), self.model.dataset.NN_phase_shift))
-            params[:, 3] = torch.Tensor(self.model.dataset.shift_phase(
-                params[:, 3].detach().numpy(), self.model.dataset.NN_phase_shift))
+            params_scaled[:, 3] = torch.Tensor(
+                self.model.dataset.shift_phase(
+                    params_scaled[:, 3].detach().numpy(),
+                    self.model.dataset.NN_phase_shift,
+                )
+            )
+            params[:, 3] = torch.Tensor(
+                self.model.dataset.shift_phase(
+                    params[:, 3].detach().numpy(), self.model.dataset.NN_phase_shift
+                )
+            )
 
         return predictions, params_scaled, params
