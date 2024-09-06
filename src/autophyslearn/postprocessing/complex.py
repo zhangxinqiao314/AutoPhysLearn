@@ -1,5 +1,4 @@
 import torch
-
 class ComplexPostProcessor:
     """
     A class used to post-process complex numbers from model fits by scaling their real and imaginary components 

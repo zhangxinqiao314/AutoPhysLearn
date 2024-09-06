@@ -10,7 +10,6 @@ from m3util.ml.optimizers.AdaHessian import AdaHessian
 from m3util.ml.optimizers.TrustRegion import TRCG
 import numpy as np
 
-
 class Multiscale1DFitter(nn.Module):
     """
     A neural network model for fitting 1D multiscale data using a combination of 1D convolutional layers and fully connected layers.
@@ -141,7 +140,6 @@ class Multiscale1DFitter(nn.Module):
         x = torch.swapaxes(x, 1, 2)
         x = self.hidden_x1(x)
 
-        # new line
         # Reshape the output for the fully connected block
         xfc = torch.reshape(x, (n, 256))  # (batch_size, features)
         xfc = self.hidden_xfc(xfc)
