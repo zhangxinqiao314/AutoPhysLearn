@@ -10,6 +10,7 @@ from m3util.ml.optimizers.AdaHessian import AdaHessian
 from m3util.ml.optimizers.TrustRegion import TRCG
 import numpy as np
 
+
 class Multiscale1DFitter(nn.Module):
     """
     A neural network model for fitting 1D multiscale data using a combination of 1D convolutional layers and fully connected layers.
