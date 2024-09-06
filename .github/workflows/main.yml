@@ -1,5 +1,8 @@
 name: CI/CD
 
+# Use self-hosted runner
+runs-on: self-hosted
+
 on:
   push:
     branches:
@@ -10,15 +13,15 @@ on:
 
 jobs:
   build:
-    runs-on: self-hosted
+    runs-on: self-hosted  # Self-hosted runner is specified here
     permissions:
       contents: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3  # Updated to v3
 
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v3  # Updated to v3
         with:
           python-version: "3.11"
 
@@ -41,11 +44,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
-      - name: Build the package
+      - name: Run tests and build package
         run: |
-          tox
-          tox -e docs
-          tox -e build
+          tox  # This will run tests defined in tox
+          tox -e docs  # Build documentation
+          tox -e build  # Build the package
 
       - name: Publish to PyPI
         if: |
@@ -63,4 +66,4 @@ jobs:
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GH_TOKEN }}
-          publish_dir: ./docs/_build/html
+          publish_dir: ./docs/_build/html  # Ensure this directory is correct
