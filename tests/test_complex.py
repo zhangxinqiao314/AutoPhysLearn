@@ -8,22 +8,30 @@ from autophyslearn.postprocessing.complex import ComplexPostProcessor  # Adjust 
 def mock_dataset():
     """Fixture to create a mock dataset with real and imaginary scalers."""
     dataset = MagicMock()
-    # Mocking the scalers for real and imaginary parts
-    dataset.raw_data_scaler.real_scaler.mean = 1.0
-    dataset.raw_data_scaler.real_scaler.std = 0.5
-    dataset.raw_data_scaler.imag_scaler.mean = 2.0
-    dataset.raw_data_scaler.imag_scaler.std = 1.0
+    # Mocking the scalers for real and imaginary parts (ensuring they work on both CPU and GPU)
+    dataset.raw_data_scaler.real_scaler.mean = torch.tensor(1.0)
+    dataset.raw_data_scaler.real_scaler.std = torch.tensor(0.5)
+    dataset.raw_data_scaler.imag_scaler.mean = torch.tensor(2.0)
+    dataset.raw_data_scaler.imag_scaler.std = torch.tensor(1.0)
     return dataset
 
-def test_compute_real_imag(mock_dataset):
+@pytest.fixture
+def device():
+    """Fixture to provide the correct computation device (CPU by default, GPU if available)."""
+    return torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+def test_compute_real_imag(mock_dataset, device):
     """Test that the compute method properly scales and stacks the real and imaginary components."""
     # Initialize the ComplexPostProcessor with the mock dataset
     processor = ComplexPostProcessor(dataset=mock_dataset)
-    
-    # Use torch.device to manage GPU/CPU computation
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # Create a sample complex tensor
+    # Move scalers to the correct device (CPU/GPU)
+    mock_dataset.raw_data_scaler.real_scaler.mean = mock_dataset.raw_data_scaler.real_scaler.mean.to(device)
+    mock_dataset.raw_data_scaler.real_scaler.std = mock_dataset.raw_data_scaler.real_scaler.std.to(device)
+    mock_dataset.raw_data_scaler.imag_scaler.mean = mock_dataset.raw_data_scaler.imag_scaler.mean.to(device)
+    mock_dataset.raw_data_scaler.imag_scaler.std = mock_dataset.raw_data_scaler.imag_scaler.std.to(device)
+    
+    # Create a sample complex tensor and move it to the correct device
     fits = torch.tensor([[1 + 2j, 3 + 4j], [5 + 6j, 7 + 8j]], dtype=torch.cfloat, device=device)
 
     # Call the compute method
@@ -39,14 +47,17 @@ def test_compute_real_imag(mock_dataset):
     # Assert that the result matches the expected result
     assert torch.allclose(result, expected_result), "The computed result does not match the expected values."
 
-def test_invalid_data_type(mock_dataset):
+def test_invalid_data_type(mock_dataset, device):
     """Test that the compute method raises an error for invalid data types."""
     processor = ComplexPostProcessor(dataset=mock_dataset)
-    
-    # Use torch.device to manage GPU/CPU computation
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # Create an invalid input (not complex tensor)
+    # Move scalers to the correct device (CPU/GPU)
+    mock_dataset.raw_data_scaler.real_scaler.mean = mock_dataset.raw_data_scaler.real_scaler.mean.to(device)
+    mock_dataset.raw_data_scaler.real_scaler.std = mock_dataset.raw_data_scaler.real_scaler.std.to(device)
+    mock_dataset.raw_data_scaler.imag_scaler.mean = mock_dataset.raw_data_scaler.imag_scaler.mean.to(device)
+    mock_dataset.raw_data_scaler.imag_scaler.std = mock_dataset.raw_data_scaler.imag_scaler.std.to(device)
+    
+    # Create an invalid input (not a complex tensor) and move it to the correct device
     fits = torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float, device=device)
 
     # Expect an exception to be raised when processing non-complex data
