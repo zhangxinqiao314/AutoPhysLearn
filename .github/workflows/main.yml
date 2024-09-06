@@ -1,8 +1,5 @@
 name: CI/CD
 
-# Use self-hosted runner
-runs-on: self-hosted
-
 on:
   push:
     branches:
