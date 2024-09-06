@@ -22,6 +22,8 @@
 .. image:: https://img.shields.io/badge/-PyScaffold-005CA0?logo=pyscaffold
     :alt: Project generated with PyScaffold
     :target: https://pyscaffold.org/
+
+
 .. .. .. image:: https://api.cirrus-ci.com/github/m3-learning/AutoPhysLearn.svg?branch=main
 .. ..         :alt: Built Status
 .. ..         :target: https://cirrus-ci.com/github/m3-learning/AutoPhysLearn
@@ -29,7 +31,6 @@
 ..     :alt: ReadTheDocs
 ..     :target: https://m3-learning.github.io/AutoPhysLearn
 |
-
 =============
 AutoPhysLearn
 =============
