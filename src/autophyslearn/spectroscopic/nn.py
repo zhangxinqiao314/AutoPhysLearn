@@ -219,8 +219,8 @@ class Model(nn.Module):
         training=True,
         path="Trained Models/SHO Fitter/",
         device=None,
-        datafed_path = None,
-        script_path = None,
+        datafed_path=None,
+        script_path=None,
         **kwargs,
     ):
         """
@@ -259,7 +259,6 @@ class Model(nn.Module):
         self.script_path = script_path
 
     def select_optimizer(self, optimizer, **kwargs):
-        
         # Select the optimizer based on the provided input
         if optimizer == "Adam":
             optimizer_ = torch.optim.Adam(self.model.parameters())
@@ -275,9 +274,22 @@ class Model(nn.Module):
             except:
                 raise ValueError("Optimizer not recognized")
         return optimizer_
-    
-    def extract_kwargs(self, i, model, optimizer_name, epoch, total_time, train_loss, total_num, 
-                   batch_size, loss_func, seed, stopping_early, model_updates):
+
+    def extract_kwargs(
+        self,
+        i,
+        model,
+        optimizer_name,
+        epoch,
+        total_time,
+        train_loss,
+        total_num,
+        batch_size,
+        loss_func,
+        seed,
+        stopping_early,
+        model_updates,
+    ):
         """
         Extracts the provided values and returns them as keyword arguments.
 
@@ -297,7 +309,7 @@ class Model(nn.Module):
         Returns:
             dict: A dictionary containing the extracted keyword arguments.
         """
-        
+
         kwargs = {
             "noise_level": model.dataset.noise,
             "optimizer_name": optimizer_name,
@@ -307,17 +319,16 @@ class Model(nn.Module):
             "batch_size": batch_size,
             "loss_func": loss_func,
             "seed": seed,
-            "early_stopping": stopping_early,  
-            "model_updates": model_updates
+            "early_stopping": stopping_early,
+            "model_updates": model_updates,
         }
 
         # Only include 'training_index' if i is not None
         if i is not None:
             kwargs["training_index"] = i
-        
+
         return kwargs
 
-    
     def fit(
         self,
         data_train,
@@ -395,14 +406,16 @@ class Model(nn.Module):
         low_loss_count = 0
         already_stopped = False  # Flag for early stopping
         model_updates = 0
-        
+
         if self.datafed_path is None:
             self.datafed = False
-        
-        torchlogger = TorchLogger(self.model, 
-                                self.datafed_path, 
-                                script_path = self.script_path,
-                                local_path = self.path)
+
+        torchlogger = TorchLogger(
+            self.model,
+            self.datafed_path,
+            script_path=self.script_path,
+            local_path=self.path,
+        )
 
         # Training loop over epochs
         for epoch in range(epochs):
@@ -458,7 +471,7 @@ class Model(nn.Module):
                     loss_.append(loss.item())
                 except:
                     loss_.append(loss)
-                
+
                 # sets the optimizer in the torchlogger object
                 torchlogger.optimizer = optimizer_
 
@@ -468,27 +481,41 @@ class Model(nn.Module):
                         low_loss_count += train_batch.shape[0]
                         if low_loss_count >= early_stopping_count:
                             filename = f"Early_Stoppage_at_{total_time}_{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}_train_loss_{train_loss/total_num}.pth"
-                            
-                            datafed_kwargs = self.extract_kwargs(i, self.model_name, optimizer_name, epoch, total_time, train_loss, total_num, 
-                                            batch_size, loss_func, seed, True, model_updates)
-                            
-                            torchlogger.save(filename, datafed=self.datafed, **datafed_kwargs)
+
+                            datafed_kwargs = self.extract_kwargs(
+                                i,
+                                self.model_name,
+                                optimizer_name,
+                                epoch,
+                                total_time,
+                                train_loss,
+                                total_num,
+                                batch_size,
+                                loss_func,
+                                seed,
+                                True,
+                                model_updates,
+                            )
+
+                            torchlogger.save(
+                                filename, datafed=self.datafed, **datafed_kwargs
+                            )
 
                             write_csv(
                                 write_CSV,
                                 path,
                                 self.model_name,
-                                i, # training index exclude if None
-                                self.model.dataset.noise, # noise level
-                                optimizer_name, # optimizer name
-                                epoch, # epoch
-                                total_time, # total training time
-                                train_loss / total_num, # train loss
-                                batch_size, # batch size
-                                loss_func, # loss function
-                                seed, # Training Seed
-                                True, # early stopping
-                                model_updates, # number of mini-batches completed
+                                i,  # training index exclude if None
+                                self.model.dataset.noise,  # noise level
+                                optimizer_name,  # optimizer name
+                                epoch,  # epoch
+                                total_time,  # total training time
+                                train_loss / total_num,  # train loss
+                                batch_size,  # batch size
+                                loss_func,  # loss function
+                                seed,  # Training Seed
+                                True,  # early stopping
+                                model_updates,  # number of mini-batches completed
                             )
 
                             already_stopped = True
@@ -512,21 +539,44 @@ class Model(nn.Module):
             # Save the model at each epoch if save_all is True
             if save_all:
                 filename = f"{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}_train_loss_{train_loss}.pth"
-                
-                datafed_kwargs = self.extract_kwargs(i, self.model_name, optimizer_name, epoch, total_time, train_loss, total_num, 
-                                            batch_size, loss_func, seed, False, model_updates)
-                            
+
+                datafed_kwargs = self.extract_kwargs(
+                    i,
+                    self.model_name,
+                    optimizer_name,
+                    epoch,
+                    total_time,
+                    train_loss,
+                    total_num,
+                    batch_size,
+                    loss_func,
+                    seed,
+                    False,
+                    model_updates,
+                )
+
                 torchlogger.save(filename, datafed=self.datafed, **datafed_kwargs)
 
             # Early stopping based on time
             if early_stopping_time is not None:
                 if total_time > early_stopping_time:
-                    
                     filename = f"Early_Stoppage_at_{total_time}_{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}_train_loss_{train_loss}.pth"
-                
-                    datafed_kwargs = self.extract_kwargs(i, self.model_name, optimizer_name, epoch, total_time, train_loss, total_num, 
-                                                batch_size, loss_func, seed, True, model_updates)
-                                
+
+                    datafed_kwargs = self.extract_kwargs(
+                        i,
+                        self.model_name,
+                        optimizer_name,
+                        epoch,
+                        total_time,
+                        train_loss,
+                        total_num,
+                        batch_size,
+                        loss_func,
+                        seed,
+                        True,
+                        model_updates,
+                    )
+
                     torchlogger.save(filename, datafed=self.datafed, **datafed_kwargs)
 
                     write_csv(
@@ -549,10 +599,22 @@ class Model(nn.Module):
 
         # Save the final model
         filename = f"{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}_train_loss_{train_loss}.pth"
-                
-        datafed_kwargs = self.extract_kwargs(i, self.model_name, optimizer_name, epoch, total_time, train_loss, total_num, 
-                                    batch_size, loss_func, seed, False, model_updates)
-                    
+
+        datafed_kwargs = self.extract_kwargs(
+            i,
+            self.model_name,
+            optimizer_name,
+            epoch,
+            total_time,
+            train_loss,
+            total_num,
+            batch_size,
+            loss_func,
+            seed,
+            False,
+            model_updates,
+        )
+
         torchlogger.save(filename, datafed=self.datafed, **datafed_kwargs)
 
         write_csv(
