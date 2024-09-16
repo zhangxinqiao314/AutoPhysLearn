@@ -257,6 +257,12 @@ class Model(nn.Module):
         self.path = make_folder(path)
         self.datafed_path = datafed_path
         self.script_path = script_path
+        
+        # Checks if the user wants to save the data to DataFed.
+        if self.datafed_path is not None:
+            self.datafed = True
+        else: 
+            self.datafed = False
 
     def select_optimizer(self, optimizer, **kwargs):
         # Select the optimizer based on the provided input
@@ -311,7 +317,7 @@ class Model(nn.Module):
         """
 
         kwargs = {
-            "noise_level": model.dataset.noise,
+            "noise_level": self.model.dataset.noise,
             "optimizer_name": optimizer_name,
             "epoch": epoch,
             "total_time": total_time,
@@ -391,7 +397,7 @@ class Model(nn.Module):
         torch.cuda.empty_cache()
 
         # Select the optimizer
-        optimizer_ = self.select_optimizer(self, optimizer, **kwargs)
+        optimizer_ = self.select_optimizer(optimizer, **kwargs)
 
         # Instantiate the dataloader
         train_dataloader = DataLoader(data_train, batch_size=batch_size, shuffle=True)
@@ -461,6 +467,8 @@ class Model(nn.Module):
                     train_loss += loss.item() * pred.shape[0]
                     total_num += pred.shape[0]
                     optimizer_.step()
+                    for param in self.model.parameters():
+                        param.grad = None
                     optimizer_name = type(optimizer_).__name__
 
                 epoch_time += time.time() - start_time
