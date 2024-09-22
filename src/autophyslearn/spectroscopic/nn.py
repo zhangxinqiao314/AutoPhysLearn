@@ -532,6 +532,7 @@ class Model(nn.Module):
                                 seed,  # Training Seed
                                 True,  # early stopping
                                 model_updates,  # number of mini-batches completed
+                                filename,
                             )
 
                             already_stopped = True
@@ -612,6 +613,7 @@ class Model(nn.Module):
                         seed,
                         True,
                         model_updates,
+                        filename,
                     )
                     break
 
@@ -651,6 +653,7 @@ class Model(nn.Module):
             seed,
             False,
             model_updates,
+            filename,
         )
 
         # Save training loss if required
