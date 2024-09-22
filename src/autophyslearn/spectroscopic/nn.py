@@ -425,6 +425,10 @@ class Model(nn.Module):
             script_path=self.script_path,
             local_path=self.path,
         )
+        
+        # saves the notebook record id to the torchlogger object
+        if torchlogger.notebook_record_id is not None:
+            self.notebook_record_id = torchlogger.notebook_record_id
 
         # Training loop over epochs
         for epoch in range(epochs):
