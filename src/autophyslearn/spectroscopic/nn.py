@@ -295,6 +295,7 @@ class Model(nn.Module):
         seed,
         stopping_early,
         model_updates,
+        file_name,
     ):
         """
         Extracts the provided values and returns them as keyword arguments.
@@ -311,6 +312,7 @@ class Model(nn.Module):
             loss_func (str): Loss function used.
             seed (int): Seed used for training.
             model_updates (int): Number of mini-batches completed.
+            file_name (str): Name of the file to save.
 
         Returns:
             dict: A dictionary containing the extracted keyword arguments.
@@ -321,12 +323,13 @@ class Model(nn.Module):
             "optimizer_name": optimizer_name,
             "epoch": epoch,
             "total_time": total_time,
-            "train_loss": train_loss / total_num,
+            "train_loss": train_loss,
             "batch_size": batch_size,
             "loss_func": loss_func,
             "seed": seed,
             "early_stopping": stopping_early,
             "model_updates": model_updates,
+            "file_name": file_name,
         }
 
         # Only include 'training_index' if i is not None
@@ -503,6 +506,7 @@ class Model(nn.Module):
                                 seed,
                                 True,
                                 model_updates,
+                                file_name=filename,
                             )
 
                             torchlogger.save(
@@ -561,6 +565,7 @@ class Model(nn.Module):
                     seed,
                     False,
                     model_updates,
+                    file_name=filename,
                 )
 
                 torchlogger.save(filename, datafed=self.datafed, **datafed_kwargs)
@@ -583,6 +588,7 @@ class Model(nn.Module):
                         seed,
                         True,
                         model_updates,
+                        file_name=filename,
                     )
 
                     torchlogger.save(filename, datafed=self.datafed, **datafed_kwargs)
@@ -621,6 +627,7 @@ class Model(nn.Module):
             seed,
             False,
             model_updates,
+            file_name=filename,
         )
 
         torchlogger.save(filename, datafed=self.datafed, **datafed_kwargs)
