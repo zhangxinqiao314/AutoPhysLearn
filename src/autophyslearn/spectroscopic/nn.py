@@ -221,6 +221,7 @@ class Model(nn.Module):
         device=None,
         datafed_path=None,
         script_path=None,
+        notebook_metadata=None,
         **kwargs,
     ):
         """
@@ -235,6 +236,7 @@ class Model(nn.Module):
             device (str, optional): Device to use ('cuda' or 'cpu'). Defaults to None.
             datafed_path (str, optional): Path to save models in DataFed. If the path is None, it will not save to DataFed. Defaults to None.
             script_path (str, optional): Path to the script that is being run. Defaults to None.
+            notebook_metadata (dict, optional): Metadata for the notebook. Defaults to None.
             **kwargs: Additional keyword arguments.
         """
         super().__init__()
@@ -257,11 +259,14 @@ class Model(nn.Module):
         self.path = make_folder(path)
         self.datafed_path = datafed_path
         self.script_path = script_path
-        
+        self.notebook_metadata = notebook_metadata
+
+        self.dataset_id = dataset.dataset_id
+
         # Checks if the user wants to save the data to DataFed.
         if self.datafed_path is not None:
             self.datafed = True
-        else: 
+        else:
             self.datafed = False
 
     def select_optimizer(self, optimizer, **kwargs):
@@ -416,22 +421,36 @@ class Model(nn.Module):
         already_stopped = False  # Flag for early stopping
         model_updates = 0
 
+        # Checks if the user wants to save the data to DataFed.
+        # If not, the self.datafed flag is set to False.
         if self.datafed_path is None:
             self.datafed = False
 
+        # Instantiates the torchlogger object
         torchlogger = TorchLogger(
             self.model,
             self.datafed_path,
             script_path=self.script_path,
             local_path=self.path,
+            notebook_metadata=self.notebook_metadata,
+            dataset_id=self.dataset_id,
         )
-        
+
         # saves the notebook record id to the torchlogger object
         if torchlogger.notebook_record_id is not None:
+            # gets the notebook record id from datafed if it was set
             self.notebook_record_id = torchlogger.notebook_record_id
+            
+            # gets the notebook metadata that was extracted from the original notebook
+            self.notebook_metadata = torchlogger.notebook_metadata
+            
+            # gets the script path that was extracted from the original notebook
+            # once the script path is set to a datafed record id all future models will be a derivative of that record of the model.
+            self.script_path = torchlogger.notebook_record_id
 
         # Training loop over epochs
         for epoch in range(epochs):
+            # Initialize variables for training
             train_loss = 0.0
             total_num = 0
             epoch_time = 0
@@ -446,7 +465,8 @@ class Model(nn.Module):
 
                 # Move the batch to the correct datatype and device
                 train_batch = train_batch.to(datatype).to(self.device)
-
+                
+                # Perform a Trust Region CG step if the optimizer is TRCG
                 if "TRCG_OP" in locals() and epoch > optimizer.get("ADAM_epochs", -1):
 
                     def closure(part, total, device):
@@ -478,7 +498,10 @@ class Model(nn.Module):
                         param.grad = None
                     optimizer_name = type(optimizer_).__name__
 
+                # stores the time taken for the epoch
                 epoch_time += time.time() - start_time
+                
+                # stores the total time taken for the training
                 total_time += time.time() - start_time
 
                 # Store the loss for logging
@@ -635,8 +658,20 @@ class Model(nn.Module):
             model_updates,
             file_name=filename,
         )
-
-        torchlogger.save(filename, datafed=self.datafed, **datafed_kwargs)
+        
+        # Save training loss if required
+        if save_training_loss:
+            save_list_to_txt(
+                loss_,
+                f"{path}/Training_loss_{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}_train_loss_{train_loss}.txt",
+            )
+            
+            # saves the file for the training loss
+            training_loss = f"{path}/Training_loss_{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}_train_loss_{train_loss}.txt"
+        else: 
+            training_loss = None
+            
+        torchlogger.save(filename, datafed=self.datafed, training_loss=training_loss, **datafed_kwargs)
 
         write_csv(
             write_CSV,
@@ -656,12 +691,6 @@ class Model(nn.Module):
             filename,
         )
 
-        # Save training loss if required
-        if save_training_loss:
-            save_list_to_txt(
-                loss_,
-                f"{path}/Training_loss_{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}_train_loss_{train_loss}.txt",
-            )
 
         # Set model to evaluation mode after training
         self.model.eval()
