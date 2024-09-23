@@ -431,7 +431,7 @@ class Model(nn.Module):
             self.model,
             self.datafed_path,
             script_path=self.script_path,
-            local_path=self.path,
+            local_path=path,
             notebook_metadata=self.notebook_metadata,
             dataset_id=self.dataset_id,
         )
@@ -535,9 +535,12 @@ class Model(nn.Module):
                                 model_updates,
                                 file_name=filename,
                             )
+                            
+                            base = 'Early_Stoppage_Loss'
+                            training_loss = self.save_training_loss(self, loss_, path, base, optimizer_name, epoch, train_loss, save_training_loss)
 
                             torchlogger.save(
-                                filename, datafed=self.datafed, **datafed_kwargs
+                                filename, datafed=self.datafed, training_loss=training_loss, **datafed_kwargs
                             )
 
                             write_csv(
@@ -595,8 +598,11 @@ class Model(nn.Module):
                     model_updates,
                     file_name=filename,
                 )
+                
+                base = 'Model_Checkpoint'
+                training_loss = self.save_training_loss(self, loss_, path, base, optimizer_name, epoch, train_loss, save_training_loss)
 
-                torchlogger.save(filename, datafed=self.datafed, **datafed_kwargs)
+                torchlogger.save(filename, datafed=self.datafed, training_loss=train_loss, **datafed_kwargs)
 
             # Early stopping based on time
             if early_stopping_time is not None:
@@ -618,8 +624,11 @@ class Model(nn.Module):
                         model_updates,
                         file_name=filename,
                     )
+                    
+                    base = 'Early_Stoppage_Time'
+                    training_loss = self.save_training_loss(self, loss_, path, base, optimizer_name, epoch, train_loss, save_training_loss)
 
-                    torchlogger.save(filename, datafed=self.datafed, **datafed_kwargs)
+                    torchlogger.save(filename, datafed=self.datafed, training_loss=training_loss, **datafed_kwargs)
 
                     write_csv(
                         write_CSV,
@@ -659,17 +668,8 @@ class Model(nn.Module):
             file_name=filename,
         )
         
-        # Save training loss if required
-        if save_training_loss:
-            save_list_to_txt(
-                loss_,
-                f"{path}/Training_loss_{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}_train_loss_{train_loss}.txt",
-            )
-            
-            # saves the file for the training loss
-            training_loss = f"{path}/Training_loss_{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}_train_loss_{train_loss}.txt"
-        else: 
-            training_loss = None
+        base = 'Final_loss'
+        training_loss = self.save_training_loss(self, loss_, path, base, optimizer_name, epoch, train_loss, save_training_loss)
             
         torchlogger.save(filename, datafed=self.datafed, training_loss=training_loss, **datafed_kwargs)
 
@@ -694,6 +694,22 @@ class Model(nn.Module):
 
         # Set model to evaluation mode after training
         self.model.eval()
+        
+    def save_training_loss(self, loss_, path, base, optimizer_name, epoch, save_training_loss):
+        
+        # Save training loss if required
+        if save_training_loss:
+            save_list_to_txt(
+                loss_,
+                f"{path}/{base}_{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}.txt",
+            )
+            
+            # saves the file for the training loss
+            training_loss = f"{path}/{base}_{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}.txt"
+        else: 
+            training_loss = None
+            
+        return training_loss
 
     def load(self, model_path):
         """
