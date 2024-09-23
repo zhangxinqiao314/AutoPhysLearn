@@ -537,7 +537,7 @@ class Model(nn.Module):
                             )
                             
                             base = 'Early_Stoppage_Loss'
-                            training_loss = self.save_training_loss(self, loss_, path, base, optimizer_name, epoch, train_loss, save_training_loss)
+                            training_loss = self.save_training_loss(loss_, path, base, optimizer_name, epoch, save_training_loss)
 
                             torchlogger.save(
                                 filename, datafed=self.datafed, training_loss=training_loss, **datafed_kwargs
@@ -600,7 +600,7 @@ class Model(nn.Module):
                 )
                 
                 base = 'Model_Checkpoint'
-                training_loss = self.save_training_loss(self, loss_, path, base, optimizer_name, epoch, train_loss, save_training_loss)
+                training_loss = self.save_training_loss(loss_, path, base, optimizer_name, epoch, save_training_loss)
 
                 torchlogger.save(filename, datafed=self.datafed, training_loss=train_loss, **datafed_kwargs)
 
@@ -626,7 +626,7 @@ class Model(nn.Module):
                     )
                     
                     base = 'Early_Stoppage_Time'
-                    training_loss = self.save_training_loss(self, loss_, path, base, optimizer_name, epoch, train_loss, save_training_loss)
+                    training_loss = self.save_training_loss(loss_, path, base, optimizer_name, epoch, save_training_loss)
 
                     torchlogger.save(filename, datafed=self.datafed, training_loss=training_loss, **datafed_kwargs)
 
@@ -669,7 +669,7 @@ class Model(nn.Module):
         )
         
         base = 'Final_loss'
-        training_loss = self.save_training_loss(self, loss_, path, base, optimizer_name, epoch, train_loss, save_training_loss)
+        training_loss = self.save_training_loss(loss_, path, base, optimizer_name, epoch, save_training_loss)
             
         torchlogger.save(filename, datafed=self.datafed, training_loss=training_loss, **datafed_kwargs)
 
@@ -695,7 +695,7 @@ class Model(nn.Module):
         # Set model to evaluation mode after training
         self.model.eval()
         
-    def save_training_loss(self, loss_, path, base, optimizer_name, epoch, save_training_loss):
+    def save_training_loss(loss_, path, base, optimizer_name, epoch, save_training_loss):
         
         # Save training loss if required
         if save_training_loss:
