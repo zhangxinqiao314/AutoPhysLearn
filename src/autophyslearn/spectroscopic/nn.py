@@ -11,6 +11,7 @@ from m3util.ml.optimizers.TrustRegion import TRCG
 import numpy as np
 
 
+
 class Multiscale1DFitter(nn.Module):
     """
     A neural network model for fitting 1D multiscale data using a combination of 1D convolutional layers and fully connected layers.
@@ -316,7 +317,7 @@ class Model(nn.Module):
         if optimizer == "Adam":
             optimizer_ = torch.optim.Adam(self.model.parameters())
         elif optimizer == "AdaHessian":
-            optimizer_ = AdaHessian(self.model.parameters(), lr=0.5)
+            optimizer_ = AdaHessian(self.model.parameters(), **kwargs)
         elif isinstance(optimizer, dict) and optimizer["name"] == "TRCG":
             optimizer_ = optimizer["optimizer"](
                 self.model, optimizer["radius"], optimizer["device"]
@@ -373,10 +374,8 @@ class Model(nn.Module):
                     total_num += train_batch.shape[0]
                     optimizer_name = "Trust Region CG"
                 else:
-                    # Standard optimizer step (e.g., Adam)
                     pred, embedding = self.model(train_batch)
                     pred = pred.to(torch.float32)
-                    pred = torch.atleast_3d(pred)
                     embedding = embedding.to(torch.float32)
                     optimizer_.zero_grad()
                     loss = loss_func(train_batch, pred)
@@ -384,7 +383,10 @@ class Model(nn.Module):
                     train_loss += loss.item() * pred.shape[0]
                     total_num += pred.shape[0]
                     optimizer_.step()
-                    optimizer_name = type(optimizer_).__name__
+                    if isinstance(optimizer_, torch.optim.Adam):
+                        optimizer_name = "Adam"
+                    elif isinstance(optimizer_, AdaHessian):
+                        optimizer_name = "AdaHessian"
 
                 epoch_time += time.time() - start_time
                 total_time += time.time() - start_time
