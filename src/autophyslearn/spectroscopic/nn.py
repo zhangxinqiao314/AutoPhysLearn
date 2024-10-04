@@ -254,7 +254,7 @@ class Model(nn.Module):
 
         self.model = model
         self.model.dataset = dataset
-        self.model.training = True
+        self.model.training = training
         self.model_name = model_basename
         self.path = make_folder(path)
         self.datafed_path = datafed_path
@@ -695,7 +695,7 @@ class Model(nn.Module):
         # Set model to evaluation mode after training
         self.model.eval()
         
-    def save_training_loss(loss_, path, base, optimizer_name, epoch, save_training_loss):
+    def save_training_loss(self, loss_, path, base, optimizer_name, epoch, save_training_loss):
         
         # Save training loss if required
         if save_training_loss:
