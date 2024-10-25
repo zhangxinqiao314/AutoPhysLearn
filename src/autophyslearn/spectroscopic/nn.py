@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -217,11 +218,11 @@ class Model(nn.Module):
         dataset,
         model_basename="",
         training=True,
-        path="Trained Models/SHO Fitter/",
+        path="Trained Models/SHO Fitter",
         device=None,
         datafed_path=None,
         script_path=None,
-        notebook_metadata=None,
+       # notebook_metadata=None, # JGoddy commented this out 
         **kwargs,
     ):
         """
@@ -259,7 +260,7 @@ class Model(nn.Module):
         self.path = make_folder(path)
         self.datafed_path = datafed_path
         self.script_path = script_path
-        self.notebook_metadata = notebook_metadata
+        # self.notebook_metadata = notebook_metadata # JGoddy commented this out
 
         self.dataset_id = dataset.dataset_id
 
@@ -426,14 +427,18 @@ class Model(nn.Module):
         if self.datafed_path is None:
             self.datafed = False
 
+        # defines the model dictionary
+        model = self.model # defining these here for now so that it goes into the local variables. 
+        model_dict = {"model": model, "optimizer_": optimizer_}
+        
         # Instantiates the torchlogger object
         torchlogger = TorchLogger(
-            self.model,
+            model_dict,
             self.datafed_path,
-            script_path=self.script_path,
-            local_path=path,
-            notebook_metadata=self.notebook_metadata,
-            dataset_id=self.dataset_id,
+            script_path=self.script_path, 
+            input_data_shape=train_dataloader.dataset[0][0].shape, 
+            dataset_id_or_path=self.dataset_id,
+            local_model_path=path,
         )
 
         # saves the notebook record id to the torchlogger object
@@ -536,28 +541,30 @@ class Model(nn.Module):
                                 file_name=filename,
                             )
                             
-                            base = 'Early_Stoppage_Loss'
-                            training_loss = self.save_training_loss(loss_, path, base, optimizer_name, epoch, save_training_loss)
 
                             torchlogger.save(
-                                filename, datafed=self.datafed, training_loss=training_loss, **datafed_kwargs
+                                filename, datafed=self.datafed, 
+                                local_file_path=os.path.join(path,filename), local_vars = list(locals().items()),
+                                model_hyperparameters={"batch size": batch_size},
+                               # training_loss=training_loss, # JGoddy commented this out 
+                                **datafed_kwargs
                             )
 
                             write_csv(
                                 write_CSV,
                                 path,
                                 self.model_name,
-                                i,  # training index exclude if None
-                                self.model.dataset.noise,  # noise level
-                                optimizer_name,  # optimizer name
-                                epoch,  # epoch
-                                total_time,  # total training time
-                                train_loss / total_num,  # train loss
-                                batch_size,  # batch size
-                                loss_func,  # loss function
-                                seed,  # Training Seed
-                                True,  # early stopping
-                                model_updates,  # number of mini-batches completed
+                                i,
+                                self.model.dataset.noise,
+                                optimizer_name,
+                                epoch,
+                                total_time,
+                                train_loss,  # already divided by total_num
+                                batch_size,
+                                loss_func,
+                                seed,
+                                False,
+                                model_updates,
                                 filename,
                             )
 
@@ -599,10 +606,32 @@ class Model(nn.Module):
                     file_name=filename,
                 )
                 
-                base = 'Model_Checkpoint'
-                training_loss = self.save_training_loss(loss_, path, base, optimizer_name, epoch, save_training_loss)
+                
+                torchlogger.save(
+                                filename, datafed=self.datafed, 
+                                local_file_path=os.path.join(path,filename), local_vars = list(locals().items()),
+                                model_hyperparameters={"batch size": batch_size},
+                               # training_loss=training_loss, # JGoddy commented this out 
+                                **datafed_kwargs
+                            )
 
-                torchlogger.save(filename, datafed=self.datafed, training_loss=train_loss, **datafed_kwargs)
+                write_csv(
+                    write_CSV,
+                    path,
+                    self.model_name,
+                    i,
+                    self.model.dataset.noise,
+                    optimizer_name,
+                    epoch,
+                    total_time,
+                    train_loss,  # already divided by total_num
+                    batch_size,
+                    loss_func,
+                    seed,
+                    False,
+                    model_updates,
+                    filename,
+                )
 
             # Early stopping based on time
             if early_stopping_time is not None:
@@ -625,10 +654,15 @@ class Model(nn.Module):
                         file_name=filename,
                     )
                     
-                    base = 'Early_Stoppage_Time'
-                    training_loss = self.save_training_loss(loss_, path, base, optimizer_name, epoch, save_training_loss)
 
-                    torchlogger.save(filename, datafed=self.datafed, training_loss=training_loss, **datafed_kwargs)
+
+                    torchlogger.save(
+                                filename, datafed=self.datafed, 
+                                local_file_path=os.path.join(path,filename), local_vars = list(locals().items()),
+                                model_hyperparameters={"batch size": batch_size},
+                               # training_loss=training_loss, # JGoddy commented this out 
+                                **datafed_kwargs
+                            )
 
                     write_csv(
                         write_CSV,
@@ -643,10 +677,12 @@ class Model(nn.Module):
                         batch_size,
                         loss_func,
                         seed,
-                        True,
+                        False,
                         model_updates,
                         filename,
                     )
+                    
+                    
                     break
 
         # Save the final model
@@ -668,10 +704,13 @@ class Model(nn.Module):
             file_name=filename,
         )
         
-        base = 'Final_loss'
-        training_loss = self.save_training_loss(loss_, path, base, optimizer_name, epoch, save_training_loss)
-            
-        torchlogger.save(filename, datafed=self.datafed, training_loss=training_loss, **datafed_kwargs)
+        torchlogger.save(
+                                filename, datafed=self.datafed, 
+                                local_file_path=os.path.join(path, filename), local_vars = list(locals().items()),
+                                model_hyperparameters={"batch size": batch_size},
+                               # training_loss=training_loss, # JGoddy commented this out 
+                                **datafed_kwargs
+                            )
 
         write_csv(
             write_CSV,
