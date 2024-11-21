@@ -8,6 +8,8 @@ from m3util.ml.rand import set_seeds
 from m3util.ml.logging import write_csv, save_list_to_txt
 from m3util.ml.optimizers.AdaHessian import AdaHessian
 from m3util.ml.optimizers.TrustRegion import TRCG
+from datafed_torchflow.pytorch import TorchLogger
+
 import numpy as np
 
 
@@ -55,8 +57,6 @@ class Multiscale1DFitter(nn.Module):
             **kwargs: Additional keyword arguments.
         """
         super().__init__()
-
-        # TODO: Could add a decoder encoder block to the model
 
         self.input_channels = input_channels
         self.scaler = scaler
@@ -220,6 +220,9 @@ class Model(nn.Module):
         training=True,
         path="Trained Models/SHO Fitter/",
         device=None,
+        datafed_path=None,
+        script_path=None,
+        notebook_metadata=None,
         **kwargs,
     ):
         """
@@ -232,6 +235,9 @@ class Model(nn.Module):
             training (bool, optional): Flag indicating if the model is in training mode. Defaults to True.
             path (str, optional): Path to save trained models. Defaults to 'Trained Models/SHO Fitter/'.
             device (str, optional): Device to use ('cuda' or 'cpu'). Defaults to None.
+            datafed_path (str, optional): Path to save models in DataFed. If the path is None, it will not save to DataFed. Defaults to None.
+            script_path (str, optional): Path to the script that is being run. Defaults to None.
+            notebook_metadata (dict, optional): Metadata for the notebook. Defaults to None.
             **kwargs: Additional keyword arguments.
         """
         super().__init__()
@@ -252,6 +258,91 @@ class Model(nn.Module):
         self.model.training = True
         self.model_name = model_basename
         self.path = make_folder(path)
+        self.datafed_path = datafed_path
+        self.script_path = script_path
+        self.notebook_metadata = notebook_metadata
+
+        self.dataset_id = dataset.dataset_id
+
+        # Checks if the user wants to save the data to DataFed.
+        if self.datafed_path is not None:
+            self.datafed = True
+        else:
+            self.datafed = False
+
+    def select_optimizer(self, optimizer, **kwargs):
+        # Select the optimizer based on the provided input
+        if optimizer == "Adam":
+            optimizer_ = torch.optim.Adam(self.model.parameters())
+        elif optimizer == "AdaHessian":
+            optimizer_ = AdaHessian(self.model.parameters(), lr=0.5)
+        elif isinstance(optimizer, dict) and optimizer["name"] == "TRCG":
+            optimizer_ = optimizer["optimizer"](
+                self.model, optimizer["radius"], optimizer["device"]
+            )
+        else:
+            try:
+                optimizer_ = optimizer(self.model.parameters())
+            except:
+                raise ValueError("Optimizer not recognized")
+        return optimizer_
+
+    def extract_kwargs(
+        self,
+        i,
+        model,
+        optimizer_name,
+        epoch,
+        total_time,
+        train_loss,
+        total_num,
+        batch_size,
+        loss_func,
+        seed,
+        stopping_early,
+        model_updates,
+        file_name,
+    ):
+        """
+        Extracts the provided values and returns them as keyword arguments.
+
+        Args:
+            i (int or None): Training index, exclude if None.
+            model (object): The model object containing the dataset and noise level.
+            optimizer_name (str): The name of the optimizer used.
+            epoch (int): Current epoch number.
+            total_time (float): Total training time.
+            train_loss (float): Total training loss.
+            total_num (int): The total number of training examples.
+            batch_size (int): Size of each training batch.
+            loss_func (str): Loss function used.
+            seed (int): Seed used for training.
+            model_updates (int): Number of mini-batches completed.
+            file_name (str): Name of the file to save.
+
+        Returns:
+            dict: A dictionary containing the extracted keyword arguments.
+        """
+
+        kwargs = {
+            "noise_level": self.model.dataset.noise,
+            "optimizer_name": optimizer_name,
+            "epoch": epoch,
+            "total_time": total_time,
+            "train_loss": train_loss,
+            "batch_size": batch_size,
+            "loss_func": loss_func,
+            "seed": seed,
+            "early_stopping": stopping_early,
+            "model_updates": model_updates,
+            "file_name": file_name,
+        }
+
+        # Only include 'training_index' if i is not None
+        if i is not None:
+            kwargs["training_index"] = i
+
+        return kwargs
 
     def fit(
         self,
@@ -311,22 +402,11 @@ class Model(nn.Module):
         # Set the random seed for reproducibility
         set_seeds(seed=seed)
 
+        # Clear the GPU cache
         torch.cuda.empty_cache()
 
-        # Select the optimizer based on the provided input
-        if optimizer == "Adam":
-            optimizer_ = torch.optim.Adam(self.model.parameters())
-        elif optimizer == "AdaHessian":
-            optimizer_ = AdaHessian(self.model.parameters(), **kwargs)
-        elif isinstance(optimizer, dict) and optimizer["name"] == "TRCG":
-            optimizer_ = optimizer["optimizer"](
-                self.model, optimizer["radius"], optimizer["device"]
-            )
-        else:
-            try:
-                optimizer_ = optimizer(self.model.parameters())
-            except:
-                raise ValueError("Optimizer not recognized")
+        # Select the optimizer
+        optimizer_ = self.select_optimizer(optimizer, **kwargs)
 
         # Instantiate the dataloader
         train_dataloader = DataLoader(data_train, batch_size=batch_size, shuffle=True)
@@ -336,13 +416,42 @@ class Model(nn.Module):
             TRCG_OP = optimizer_
             optimizer_ = torch.optim.Adam(self.model.parameters(), **kwargs)
 
+        # Initialize variables for early stopping
         total_time = 0
         low_loss_count = 0
         already_stopped = False  # Flag for early stopping
         model_updates = 0
 
+        # Checks if the user wants to save the data to DataFed.
+        # If not, the self.datafed flag is set to False.
+        if self.datafed_path is None:
+            self.datafed = False
+
+        # Instantiates the torchlogger object
+        torchlogger = TorchLogger(
+            self.model,
+            self.datafed_path,
+            script_path=self.script_path,
+            local_path=path,
+            notebook_metadata=self.notebook_metadata,
+            dataset_id=self.dataset_id,
+        )
+
+        # saves the notebook record id to the torchlogger object
+        if torchlogger.notebook_record_id is not None:
+            # gets the notebook record id from datafed if it was set
+            self.notebook_record_id = torchlogger.notebook_record_id
+            
+            # gets the notebook metadata that was extracted from the original notebook
+            self.notebook_metadata = torchlogger.notebook_metadata
+            
+            # gets the script path that was extracted from the original notebook
+            # once the script path is set to a datafed record id all future models will be a derivative of that record of the model.
+            self.script_path = torchlogger.notebook_record_id
+
         # Training loop over epochs
         for epoch in range(epochs):
+            # Initialize variables for training
             train_loss = 0.0
             total_num = 0
             epoch_time = 0
@@ -357,7 +466,8 @@ class Model(nn.Module):
 
                 # Move the batch to the correct datatype and device
                 train_batch = train_batch.to(datatype).to(self.device)
-
+                
+                # Perform a Trust Region CG step if the optimizer is TRCG
                 if "TRCG_OP" in locals() and epoch > optimizer.get("ADAM_epochs", -1):
 
                     def closure(part, total, device):
@@ -383,12 +493,14 @@ class Model(nn.Module):
                     train_loss += loss.item() * pred.shape[0]
                     total_num += pred.shape[0]
                     optimizer_.step()
-                    if isinstance(optimizer_, torch.optim.Adam):
-                        optimizer_name = "Adam"
-                    elif isinstance(optimizer_, AdaHessian):
-                        optimizer_name = "AdaHessian"
+                    for param in self.model.parameters():
+                        param.grad = None
+                    optimizer_name = type(optimizer_).__name__
 
+                # stores the time taken for the epoch
                 epoch_time += time.time() - start_time
+                
+                # stores the total time taken for the training
                 total_time += time.time() - start_time
 
                 # Store the loss for logging
@@ -397,31 +509,55 @@ class Model(nn.Module):
                 except:
                     loss_.append(loss)
 
+                # sets the optimizer in the torchlogger object
+                torchlogger.optimizer = optimizer_
+
                 # Early stopping based on loss
                 if early_stopping_loss is not None and not already_stopped:
                     if loss < early_stopping_loss:
                         low_loss_count += train_batch.shape[0]
                         if low_loss_count >= early_stopping_count:
-                            torch.save(
-                                self.model.state_dict(),
-                                f"{path}/Early_Stoppage_at_{total_time}_{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}_train_loss_{train_loss/total_num}.pth",
+                            filename = f"Early_Stoppage_at_{total_time}_{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}_train_loss_{train_loss/total_num}.pth"
+
+                            datafed_kwargs = self.extract_kwargs(
+                                i,
+                                self.model_name,
+                                optimizer_name,
+                                epoch,
+                                total_time,
+                                train_loss,
+                                total_num,
+                                batch_size,
+                                loss_func,
+                                seed,
+                                True,
+                                model_updates,
+                                file_name=filename,
+                            )
+                            
+                            base = 'Early_Stoppage_Loss'
+                            training_loss = self.save_training_loss(loss_, path, base, optimizer_name, epoch, save_training_loss)
+
+                            torchlogger.save(
+                                filename, datafed=self.datafed, training_loss=training_loss, **datafed_kwargs
                             )
 
                             write_csv(
                                 write_CSV,
                                 path,
                                 self.model_name,
-                                i,
-                                self.model.dataset.noise,
-                                optimizer_name,
-                                epoch,
-                                total_time,
-                                train_loss / total_num,
-                                batch_size,
-                                loss_func,
-                                seed,
-                                True,
-                                model_updates,
+                                i,  # training index exclude if None
+                                self.model.dataset.noise,  # noise level
+                                optimizer_name,  # optimizer name
+                                epoch,  # epoch
+                                total_time,  # total training time
+                                train_loss / total_num,  # train loss
+                                batch_size,  # batch size
+                                loss_func,  # loss function
+                                seed,  # Training Seed
+                                True,  # early stopping
+                                model_updates,  # number of mini-batches completed
+                                filename,
                             )
 
                             already_stopped = True
@@ -444,18 +580,54 @@ class Model(nn.Module):
 
             # Save the model at each epoch if save_all is True
             if save_all:
-                torch.save(
-                    self.model.state_dict(),
-                    f"{path}/{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}_train_loss_{train_loss}.pth",
+                filename = f"{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}_train_loss_{train_loss}.pth"
+
+                datafed_kwargs = self.extract_kwargs(
+                    i,
+                    self.model_name,
+                    optimizer_name,
+                    epoch,
+                    total_time,
+                    train_loss,
+                    total_num,
+                    batch_size,
+                    loss_func,
+                    seed,
+                    False,
+                    model_updates,
+                    file_name=filename,
                 )
+                
+                base = 'Model_Checkpoint'
+                training_loss = self.save_training_loss(loss_, path, base, optimizer_name, epoch, save_training_loss)
+
+                torchlogger.save(filename, datafed=self.datafed, training_loss=train_loss, **datafed_kwargs)
 
             # Early stopping based on time
             if early_stopping_time is not None:
                 if total_time > early_stopping_time:
-                    torch.save(
-                        self.model.state_dict(),
-                        f"{path}/Early_Stoppage_at_{total_time}_{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}_train_loss_{train_loss}.pth",
+                    filename = f"Early_Stoppage_at_{total_time}_{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}_train_loss_{train_loss}.pth"
+
+                    datafed_kwargs = self.extract_kwargs(
+                        i,
+                        self.model_name,
+                        optimizer_name,
+                        epoch,
+                        total_time,
+                        train_loss,
+                        total_num,
+                        batch_size,
+                        loss_func,
+                        seed,
+                        True,
+                        model_updates,
+                        file_name=filename,
                     )
+                    
+                    base = 'Early_Stoppage_Time'
+                    training_loss = self.save_training_loss(loss_, path, base, optimizer_name, epoch, save_training_loss)
+
+                    torchlogger.save(filename, datafed=self.datafed, training_loss=training_loss, **datafed_kwargs)
 
                     write_csv(
                         write_CSV,
@@ -472,14 +644,34 @@ class Model(nn.Module):
                         seed,
                         True,
                         model_updates,
+                        filename,
                     )
                     break
 
         # Save the final model
-        torch.save(
-            self.model.state_dict(),
-            f"{path}/{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}_train_loss_{train_loss}.pth",
+        filename = f"{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}_train_loss_{train_loss}.pth"
+
+        datafed_kwargs = self.extract_kwargs(
+            i,
+            self.model_name,
+            optimizer_name,
+            epoch,
+            total_time,
+            train_loss,
+            total_num,
+            batch_size,
+            loss_func,
+            seed,
+            False,
+            model_updates,
+            file_name=filename,
         )
+        
+        base = 'Final_loss'
+        training_loss = self.save_training_loss(loss_, path, base, optimizer_name, epoch, save_training_loss)
+            
+        torchlogger.save(filename, datafed=self.datafed, training_loss=training_loss, **datafed_kwargs)
+
         write_csv(
             write_CSV,
             path,
@@ -495,17 +687,28 @@ class Model(nn.Module):
             seed,
             False,
             model_updates,
+            filename,
         )
 
+
+        # Set model to evaluation mode after training
+        self.model.eval()
+        
+    def save_training_loss(loss_, path, base, optimizer_name, epoch, save_training_loss):
+        
         # Save training loss if required
         if save_training_loss:
             save_list_to_txt(
                 loss_,
-                f"{path}/Training_loss_{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}_train_loss_{train_loss}.txt",
+                f"{path}/{base}_{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}.txt",
             )
-
-        # Set model to evaluation mode after training
-        self.model.eval()
+            
+            # saves the file for the training loss
+            training_loss = f"{path}/{base}_{self.model_name}_model_optimizer_{optimizer_name}_epoch_{epoch}.txt"
+        else: 
+            training_loss = None
+            
+        return training_loss
 
     def load(self, model_path):
         """
