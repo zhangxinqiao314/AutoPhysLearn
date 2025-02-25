@@ -16,6 +16,7 @@ import numpy as np
 
 
 import sympy as sp
+
 def calculate_size(L_in, **kwargs):
     """
     Calculates the output size of a convolutional layer given the input size and other parameters.
@@ -45,13 +46,30 @@ def calculate_size(L_in, **kwargs):
 
     return None, None
     
+def block_factory(block_class):
+    """Creates a factory for block classes that will set input sizes later."""
+    class BlockFactory:
+        def __init__(self, *args,**kwargs):
+            self.args = args
+            self.kwargs = kwargs
+            self.block_class = block_class
+            
+        def create(self, input_size):
+            # Create actual block with proper input size
+            return self.block_class(input_size, *self.args, **self.kwargs)
+    
+    return BlockFactory
+
 
 class Conv_Block(nn.Module):
-    def __init__(self, input_channels, output_channels_list, kernel_size_list, pool_list, max_pool=True):
+    '''
+    A neural network model for fitting 1D multiscale data using a combination of 1D convolutional layers and fully connected layers.
+    '''
+    def __init__(self, input_size, output_channels_list, kernel_size_list, pool_list, max_pool=True):
         super(Conv_Block, self).__init__()
-        self.input_channels = input_channels
+        self.input_channels = input_size
         hidden1_list = [nn.MaxPool1d(kernel_size=2)] if max_pool else []
-        hidden1_list.append(nn.Conv1d(in_channels=input_channels, out_channels=output_channels_list[0], kernel_size=kernel_size_list[0]))
+        hidden1_list.append(nn.Conv1d(in_channels=self.input_channels, out_channels=output_channels_list[0], kernel_size=kernel_size_list[0]))
         hidden1_list.append(nn.SELU())
         for i in range(len(output_channels_list)-1):
             hidden1_list.append(nn.Conv1d(in_channels=output_channels_list[i], out_channels=output_channels_list[i+1], kernel_size=kernel_size_list[i+1]))
@@ -65,12 +83,17 @@ class Conv_Block(nn.Module):
         hidden1_list.remove('spare')
             
         self.hidden = nn.Sequential(*hidden1_list)
+        self.output_channels = output_channels_list[-1]
+        self.output_length = pool_list[-1]
         
     def forward(self, x):
-        x.reshape(x.shape[0], self.input_channels, -1)
+        x=x.reshape(x.shape[0], self.input_channels, -1)
         return self.hidden(x)
             
 class FC_Block(nn.module):
+    '''
+    A neural network model for fitting 1D multiscale data using a combination of 1D convolutional layers and fully connected layers.
+    '''
     def __init__(self, input_size, output_size_list):
         super(FC_Block, self).__init__()
         hidden1_list = [nn.Linear(input_size, output_size_list[0])]
@@ -79,9 +102,11 @@ class FC_Block(nn.module):
             hidden1_list.append(nn.Linear(output_size_list[i], output_size_list[i+1]))
             hidden1_list.append(nn.SELU())
         self.hidden = nn.Sequential(*hidden1_list)
+        
+        self.output_channels = output_size_list//10 # bs'd the ideal #channels after fc b
     
     def forward(self, x):
-        x.reshape(x.shape[0], -1)
+        x=x.reshape(x.shape[0], -1)
         return self.hidden(x)
         
 class Multiscale1DFitter(nn.Module):
@@ -110,10 +135,10 @@ class Multiscale1DFitter(nn.Module):
         post_processing=None,
         device="cuda",
         loops_scaler=None,
-        model_block_dict = {"hidden_x1": Conv_Block(2, [8,6,4], [7,7,5], [64], False),
-                            "hidden_xfc": FC_Block(256, [64,32,20]),
-                            "hidden_x2": Conv_Block(2, [4,4,4,4,4,4], [5,5,5,5,5,5], [16,8,4], True),
-                            "hidden_embedding": FC_Block(28, [16,8,4])},
+        model_block_dict = {"hidden_x1": block_factory(Conv_Block)([8,6,4], [7,7,5], [64], False),
+                            "hidden_xfc": block_factory(FC_Block)([64,32,20]),
+                            "hidden_x2": block_factory(Conv_Block)([4,4,4,4,4,4], [5,5,5,5,5,5], [16,8,4], True),
+                            "hidden_embedding": block_factory(FC_Block)([16,8,4])},
         skip_connections = ["hidden_xfc","hidden_embedding"],
         **kwargs,
     ):
@@ -133,10 +158,10 @@ class Multiscale1DFitter(nn.Module):
         """
         super().__init__()
 
-        self.input_channels = input_channels
-        self.scaler = scaler
         self.function = function
         self.x_data = x_data
+        self.input_channels = x_data[1]
+        self.scaler = scaler
         self.post_processing = post_processing
         self.device = device
         self.num_params = num_params
@@ -144,67 +169,25 @@ class Multiscale1DFitter(nn.Module):
 
         self.model_block_dict = model_block_dict
         self.skip_connections = skip_connections
+        
+        # Instantiate actual blocks with proper input sizes
+        current_input_size = input_channels
+        self.model_block_dict = model_block_dict
+        
+        
         for key, value in model_block_dict.items():
-            setattr(self, key, value)
+            if isinstance(value, nn.Module): # if it is a nn.Module, set it as an attribute
+                setattr(self, key, value)
+            elif isinstance(value, type): # if it is a block factory, create the block and set it as an attribute
+                # create blocks in order to determine output sizes for next blocks
+                try: current_input_size = block.output_channels*block.output_length
+                except: current_input_size = block.output_channels # bs'd the ideal #channels after fc block
+                
+                block = value.create(current_input_size)
+                setattr(self, key, block)
+            else:
+                raise ValueError(f"Invalid value for {key}")
             
-        # # Input block of 1D convolutional layers
-        # self.hidden_x1 = nn.Sequential(
-        #     nn.Conv1d(in_channels=self.input_channels, out_channels=8, kernel_size=7),
-        #     nn.SELU(),
-        #     nn.Conv1d(in_channels=8, out_channels=6, kernel_size=7),
-        #     nn.SELU(),
-        #     nn.Conv1d(in_channels=6, out_channels=4, kernel_size=5),
-        #     nn.SELU(),
-        #     nn.AdaptiveAvgPool1d(
-        #         64
-        #     ),  # Adaptive average pooling to reduce output dimensionality
-        # )
-
-        # # Fully connected block
-        # self.hidden_xfc = nn.Sequential(
-        #     nn.Linear(256, 64),
-        #     nn.SELU(),
-        #     nn.Linear(64, 32),
-        #     nn.SELU(),
-        #     nn.Linear(32, 20),
-        #     nn.SELU(),
-        # )
-
-        # # Second block of 1D convolutional layers
-        # self.hidden_x2 = nn.Sequential(
-        #     nn.MaxPool1d(kernel_size=2),  # Max pooling to reduce dimensionality
-        #     nn.Conv1d(in_channels=2, out_channels=4, kernel_size=5),
-        #     nn.SELU(),
-        #     nn.Conv1d(in_channels=4, out_channels=4, kernel_size=5),
-        #     nn.SELU(),
-        #     nn.Conv1d(in_channels=4, out_channels=4, kernel_size=5),
-        #     nn.SELU(),
-        #     nn.Conv1d(in_channels=4, out_channels=4, kernel_size=5),
-        #     nn.SELU(),
-        #     nn.Conv1d(in_channels=4, out_channels=4, kernel_size=5),
-        #     nn.SELU(),
-        #     nn.Conv1d(in_channels=4, out_channels=4, kernel_size=5),
-        #     nn.SELU(),
-        #     nn.AdaptiveAvgPool1d(16),  # Adaptive average pooling layer
-        #     nn.Conv1d(in_channels=4, out_channels=2, kernel_size=3),
-        #     nn.SELU(),
-        #     nn.AdaptiveAvgPool1d(8),  # Adaptive average pooling layer
-        #     nn.Conv1d(in_channels=2, out_channels=2, kernel_size=3),
-        #     nn.SELU(),
-        #     nn.AdaptiveAvgPool1d(4),  # Adaptive average pooling layer
-        # )
-
-        # # Flatten layer to prepare data for the fully connected layers
-        # self.flatten_layer = nn.Flatten()
-
-        # # Final embedding block - outputs the desired number of parameters
-        # self.hidden_embedding = nn.Sequential(
-        #     nn.Linear(28, 16),
-        #     nn.SELU(),
-        #     nn.Linear(16, 8),
-        #     nn.SELU(),
-        #     nn.Linear(8, self.num_params),
-        # )
 
     def forward(self, x, n=-1):
         """
@@ -227,28 +210,7 @@ class Multiscale1DFitter(nn.Module):
             x = getattr(self, key)(x)
         embedding = x
         unscaled_param = x
-        # x = torch.swapaxes(x, 1, 2)
-        # x = self.hidden_x1(x)
-
-        # # Reshape the output for the fully connected block
-        # xfc = torch.reshape(x, (n, 256))  # (batch_size, features)
-        # xfc = self.hidden_xfc(xfc)
-
-        # # Reshape for the second block of convolutional layers
-        # x = torch.reshape(x, (n, 2, 128))
-        # x = self.hidden_x2(x)
-
-        # # Flatten the output of the second convolutional block
-        # cnn_flat = self.flatten_layer(x)
-
-        # # Combine the flattened convolutional output and fully connected output
-        # encoded = torch.cat((cnn_flat, xfc), dim=1)
-
-        # # Get the final embedding (output parameters)
-        # embedding = self.hidden_embedding(encoded)
-
-        # unscaled_param = embedding
-
+        
         # If a scaler is provided, unscale the parameters
         if self.scaler is not None:
             unscaled_param = (
