@@ -78,7 +78,7 @@ class Conv_Block(nn.Module):
         
         hidden1_list.append('spare')
         for i in range(len(pool_list),0,-1):
-            hidden1_list.insert(-i, nn.AdaptiveAvgPool1d(pool_list[i]))
+            hidden1_list.insert(-i, nn.AdaptiveAvgPool1d(pool_list[i-1]))
             
         hidden1_list.remove('spare')
             
@@ -90,7 +90,7 @@ class Conv_Block(nn.Module):
         x=x.reshape(x.shape[0], self.input_channels, -1)
         return self.hidden(x)
             
-class FC_Block(nn.module):
+class FC_Block(nn.Module):
     '''
     A neural network model for fitting 1D multiscale data using a combination of 1D convolutional layers and fully connected layers.
     '''
@@ -103,7 +103,7 @@ class FC_Block(nn.module):
             hidden1_list.append(nn.SELU())
         self.hidden = nn.Sequential(*hidden1_list)
         
-        self.output_channels = output_size_list//10 # bs'd the ideal #channels after fc b
+        self.output_channels = len(output_size_list)//10 # bs'd the ideal #channels after fc b
     
     def forward(self, x):
         x=x.reshape(x.shape[0], -1)
@@ -178,12 +178,12 @@ class Multiscale1DFitter(nn.Module):
         for key, value in model_block_dict.items():
             if isinstance(value, nn.Module): # if it is a nn.Module, set it as an attribute
                 setattr(self, key, value)
-            elif isinstance(value, type): # if it is a block factory, create the block and set it as an attribute
+            elif isinstance(value, object): # if it is a block factory, create the block and set it as an attribute
                 # create blocks in order to determine output sizes for next blocks
+                block = value.create(current_input_size)
                 try: current_input_size = block.output_channels*block.output_length
                 except: current_input_size = block.output_channels # bs'd the ideal #channels after fc block
                 
-                block = value.create(current_input_size)
                 setattr(self, key, block)
             else:
                 raise ValueError(f"Invalid value for {key}")
