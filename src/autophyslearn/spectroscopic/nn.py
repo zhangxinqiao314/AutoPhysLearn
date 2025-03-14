@@ -68,27 +68,40 @@ class Conv_Block(nn.Module):
     def __init__(self, input_size, output_channels_list, kernel_size_list, pool_list, max_pool=True):
         super(Conv_Block, self).__init__()
         self.input_channels = input_size
-        hidden1_list = [nn.MaxPool1d(kernel_size=2)] if max_pool else []
-        hidden1_list.append(nn.Conv1d(in_channels=self.input_channels, out_channels=output_channels_list[0], kernel_size=kernel_size_list[0]))
-        hidden1_list.append(nn.SELU())
+        hidden_list = [nn.MaxPool1d(kernel_size=2)] if max_pool else []
+        
+        hidden_list.append(nn.Conv1d(in_channels=self.input_channels, 
+                                     out_channels=output_channels_list[0], 
+                                     kernel_size=kernel_size_list[0]))
+        hidden_list.append(nn.SELU())
         for i in range(len(output_channels_list)-1):
-            hidden1_list.append(nn.Conv1d(in_channels=output_channels_list[i], out_channels=output_channels_list[i+1], kernel_size=kernel_size_list[i+1]))
-            hidden1_list.append(nn.SELU())
+            hidden_list.append(nn.Conv1d(in_channels=output_channels_list[i], 
+                                         out_channels=output_channels_list[i+1], 
+                                         kernel_size=kernel_size_list[i+1]))
+            hidden_list.append(nn.SELU())
         
         
-        hidden1_list.append('spare')
-        for i in range(len(pool_list),0,-1):
-            hidden1_list.insert(-i, nn.AdaptiveAvgPool1d(pool_list[i-1]))
+        hidden_list.append('spare')
+        for i,p in enumerate(pool_list[::-1]):
+            hidden_list.insert(-2*i-1, nn.AdaptiveAvgPool1d(p))
             
-        hidden1_list.remove('spare')
+        hidden_list.remove('spare')
             
-        self.hidden = nn.Sequential(*hidden1_list)
+        self.hidden = nn.Sequential(*hidden_list)
         self.output_channels = output_channels_list[-1]
         self.output_length = pool_list[-1]
         
     def forward(self, x):
-        x=x.reshape(x.shape[0], self.input_channels, -1)
-        return self.hidden(x)
+        x=x.reshape(x.shape[0], self.input_channels, -1)    
+        # print('input shape: ',x.shape)
+        for i, layer in enumerate(self.hidden):
+            # print(f"\tlayer {i}:")
+            # print('\t',layer)
+            x=layer(x)
+            # print('\t',x.shape)
+        return x
+    
+        # return self.hidden(x)
             
 class FC_Block(nn.Module):
     '''
@@ -99,14 +112,15 @@ class FC_Block(nn.Module):
         hidden1_list = [nn.Linear(input_size, output_size_list[0])]
         hidden1_list.append(nn.SELU())
         for i in range(len(output_size_list[1:])-1):
-            hidden1_list.append(nn.Linear(output_size_list[i], output_size_list[i+1]))
+            # hidden1_list.append(nn.Linear(output_size_list[i], output_size_list[i+1]))
             hidden1_list.append(nn.SELU())
         self.hidden = nn.Sequential(*hidden1_list)
         
-        self.output_channels = len(output_size_list)//10 # bs'd the ideal #channels after fc b
+        self.output_channels = max(len(output_size_list)//10,2) # bs'd the ideal #channels after fc b
     
     def forward(self, x):
         x=x.reshape(x.shape[0], -1)
+        # print(x.shape)
         return self.hidden(x)
         
 class Multiscale1DFitter(nn.Module):
@@ -181,8 +195,10 @@ class Multiscale1DFitter(nn.Module):
             elif isinstance(value, object): # if it is a block factory, create the block and set it as an attribute
                 # create blocks in order to determine output sizes for next blocks
                 block = value.create(current_input_size)
-                try: current_input_size = block.output_channels*block.output_length
-                except: current_input_size = block.output_channels # bs'd the ideal #channels after fc block
+                try: 
+                    current_input_size = block.output_channels*block.output_length
+                except: 
+                    current_input_size = block.output_channels # bs'd the ideal #channels after fc block
                 
                 setattr(self, key, block)
             else:
@@ -195,21 +211,27 @@ class Multiscale1DFitter(nn.Module):
 
         Args:
             x (torch.Tensor): Input tensor with shape (batch_size, input_channels, sequence_length).
-            n (int): Batch size for reshaping. Default is -1, which means the batch size will be inferred.
+            n (int): Batch size for reshaping. Default is -1.
 
         Returns:
             torch.Tensor: Scaled output fits.
             torch.Tensor: Unscaled parameters.
             torch.Tensor (optional): Embeddings, returned if not in training mode.
         """
-        # Swap axes to have the correct shape for convolutional layers
-        connection = torch.Tensor([[] for i in range(len(x))])
+        x = x.reshape(x.shape[0], -1, x.shape[-1])
+        
+        # Initialize empty connection with shape [1, 0, sequence_length]
+        connection = torch.empty(1, 0).to(self.device)
+        
         for key in self.model_block_dict.keys():
+            # print(key, x.shape)
+            # print(getattr(self, key))
             if key in self.skip_connections:
-                x = torch.cat((x, connection), dim=1) # along batch
+                x = torch.cat((x.flatten(start_dim=1), connection.repeat(x.shape[0],1)), dim=1) # along batch 
             x = getattr(self, key)(x)
         embedding = x
         unscaled_param = x
+        # print(x.shape)
         
         # If a scaler is provided, unscale the parameters
         if self.scaler is not None:
