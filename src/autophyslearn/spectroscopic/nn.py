@@ -95,8 +95,7 @@ class Conv_Block(nn.Module):
         x=x.reshape(x.shape[0], self.input_channels, -1)    
         # print('input shape: ',x.shape)
         for i, layer in enumerate(self.hidden):
-            # print(f"\tlayer {i}:")
-            # print('\t',layer)
+            # print(f"\tlayer {i}:",layer)
             x=layer(x)
             # print('\t',x.shape)
         return x
@@ -111,18 +110,21 @@ class FC_Block(nn.Module):
         super(FC_Block, self).__init__()
         hidden1_list = [nn.Linear(input_size, output_size_list[0])]
         hidden1_list.append(nn.SELU())
-        for i in range(len(output_size_list[1:])-1):
-            # hidden1_list.append(nn.Linear(output_size_list[i], output_size_list[i+1]))
+        for i in range(1,len(output_size_list)):
+            hidden1_list.append(nn.Linear(output_size_list[i-1], output_size_list[i]))
             hidden1_list.append(nn.SELU())
         self.hidden = nn.Sequential(*hidden1_list)
-        
+    
         self.output_channels = max(len(output_size_list)//10,2) # bs'd the ideal #channels after fc b
     
     def forward(self, x):
         x=x.reshape(x.shape[0], -1)
-        # print(x.shape)
-        return self.hidden(x)
-        
+        # print('input shape: ',x.shape)
+        for i, layer in enumerate(self.hidden):
+            # print(f"\tlayer {i}:",layer)
+            x=layer(x)
+            # print('\t',x.shape)
+        return x
 class Multiscale1DFitter(nn.Module):
     """
     A neural network model for fitting 1D multiscale data using a combination of 1D convolutional layers and fully connected layers.
@@ -145,6 +147,7 @@ class Multiscale1DFitter(nn.Module):
         x_data,
         input_channels,
         num_params,
+        num_fits=1,
         scaler=None,
         post_processing=None,
         device="cuda",
@@ -154,6 +157,7 @@ class Multiscale1DFitter(nn.Module):
                             "hidden_x2": block_factory(Conv_Block)([4,4,4,4,4,4], [5,5,5,5,5,5], [16,8,4], True),
                             "hidden_embedding": block_factory(FC_Block)([16,8,4])},
         skip_connections = ["hidden_xfc","hidden_embedding"],
+        function_kwargs = {},
         **kwargs,
     ):
         """
@@ -174,13 +178,14 @@ class Multiscale1DFitter(nn.Module):
 
         self.function = function
         self.x_data = x_data
-        self.input_channels = x_data[1]
+        self.input_channels = input_channels
         self.scaler = scaler
         self.post_processing = post_processing
         self.device = device
         self.num_params = num_params
         self.loops_scaler = loops_scaler
-
+        self.function_kwargs = function_kwargs
+        self.num_fits = num_fits
         self.model_block_dict = model_block_dict
         self.skip_connections = skip_connections
         
@@ -229,6 +234,8 @@ class Multiscale1DFitter(nn.Module):
             if key in self.skip_connections:
                 x = torch.cat((x.flatten(start_dim=1), connection.repeat(x.shape[0],1)), dim=1) # along batch 
             x = getattr(self, key)(x)
+        
+        x = x.reshape(x.shape[0]*self.input_channels, self.num_fits, self.num_params)
         embedding = x
         unscaled_param = x
         # print(x.shape)
@@ -241,7 +248,7 @@ class Multiscale1DFitter(nn.Module):
             )
 
         # Pass the unscaled parameters to the fitting function
-        fits = self.function(unscaled_param, self.x_data, device=self.device)
+        fits = self.function(unscaled_param, self.x_data, device=self.device, **self.function_kwargs)
 
         out = fits
 
